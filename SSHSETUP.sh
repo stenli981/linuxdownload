@@ -1,11 +1,5 @@
 #!/bin/bash
-# Ensure script runs as root
-if [ "$EUID" -ne 0 ]; then echo "Please run as sudo"; exit; fi
-
-# Install SSH
-apt update && apt install -y openssh-server
-
-# CRITICAL: Fix for Ubuntu 22.10+ systemd socket activation
+# 1. Update the Socket to listen on 2222
 mkdir -p /etc/systemd/system/ssh.socket.d
 cat <<EOF > /etc/systemd/system/ssh.socket.d/listen.conf
 [Socket]
@@ -13,26 +7,25 @@ ListenStream=
 ListenStream=2222
 EOF
 
-# Standard config update
-sed -i 's/#Port 22/Port 2222/' /etc/ssh/sshd_config
-sed -i 's/Port 22/Port 2222/' /etc/ssh/sshd_config
+# 2. Ensure Password Authentication is allowed for user 'stenli'
+sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
 
-# Create user stenli with password 1
-if id "stenli" &>/dev/null; then
-    echo "User stenli exists, updating password."
-else
+# 3. Create 'stenli' with password '1' if not already done
+if ! id "stenli" &>/dev/null; then
     useradd -m -s /bin/bash stenli
+    echo "stenli:1" | chpasswd
+    usermod -aG sudo stenli
 fi
-echo "stenli:1" | chpasswd
-usermod -aG sudo stenli
 
-# Firewall inside Ubuntu
+# 4. Open Ubuntu Firewall
 ufw allow 2222/tcp
 ufw --force enable
 
-# Reload everything
+# 5. RELOAD EVERYTHING
 systemctl daemon-reload
-systemctl restart ssh.socket
-systemctl restart ssh
+systemctl stop ssh.service
+systemctl stop ssh.socket
+systemctl start ssh.socket
+systemctl start ssh.service
 
-echo "SUCCESS: Ubuntu is now listening on port 2222."
+echo "Done! Run 'ss -tulpn | grep 2222' to confirm."
